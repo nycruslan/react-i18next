@@ -33,6 +33,7 @@ export const useTranslation = (ns, props = {}) => {
   const { i18n: i18nFromProps } = props;
   const { i18n: i18nFromContext, defaultNS: defaultNSFromContext } = useContext(I18nContext) || {};
   const i18n = i18nFromProps || i18nFromContext || getI18n();
+
   if (i18n && !i18n.reportNamespaces) i18n.reportNamespaces = new ReportNamespaces();
   if (!i18n) {
     warnOnce('You will need to pass in an i18next instance by using initReactI18next');
@@ -77,7 +78,6 @@ export const useTranslation = (ns, props = {}) => {
     i18nOptions.nsMode === 'fallback' ? namespaces : namespaces[0],
     keyPrefix,
   );
-  // using useState with a function expects an initializer, not the function itself:
   const getT = () => memoGetT;
   const getNewT = () =>
     alwaysNewT(
@@ -99,38 +99,36 @@ export const useTranslation = (ns, props = {}) => {
     const { bindI18n, bindI18nStore } = i18nOptions;
     isMounted.current = true;
 
+    const updateErrorState = (failedNs) => {
+      setError({
+        hasError: failedNs.length > 0,
+        failedNamespaces: failedNs,
+      });
+    };
+
+    const loadCallback = (err) => {
+      if (isMounted.current) {
+        const failedNamespaces = namespaces.filter((n) => !hasLoadedNamespace(n, i18n));
+        if (err || failedNamespaces.length > 0) {
+          updateErrorState(failedNamespaces);
+        } else {
+          updateErrorState([]);
+        }
+        setT(getNewT);
+      }
+    };
+
     // if not ready and not using suspense load the namespaces
-    // in side effect and do not call resetT if unmounted
     if (!ready && !useSuspense) {
       if (props.lng) {
-        loadLanguages(i18n, props.lng, namespaces, (err) => {
-          if (isMounted.current) {
-            if (err) {
-              setError({
-                hasError: true,
-                failedNamespaces: namespaces.filter((n) => !hasLoadedNamespace(n, i18n)),
-              });
-            }
-            setT(getNewT);
-          }
-        });
+        loadLanguages(i18n, props.lng, namespaces, loadCallback);
       } else {
-        loadNamespaces(i18n, namespaces, (err) => {
-          if (isMounted.current) {
-            if (err) {
-              setError({
-                hasError: true,
-                failedNamespaces: namespaces.filter((n) => !hasLoadedNamespace(n, i18n)),
-              });
-            }
-            setT(getNewT);
-          }
-        });
+        loadNamespaces(i18n, namespaces, loadCallback);
       }
     }
 
     if (ready && previousJoinedNS && previousJoinedNS !== joinedNS && isMounted.current) {
-      setError({ hasError: false, failedNamespaces: [] });
+      updateErrorState([]);
       setT(getNewT);
     }
 
@@ -156,9 +154,6 @@ export const useTranslation = (ns, props = {}) => {
   useEffect(() => {
     if (isMounted.current && ready) {
       setError({ hasError: false, failedNamespaces: [] });
-      // not getNewT: depend on dependency list of the useCallback call within
-      // useMemoizedT to only provide a newly-bound t *iff* i18n instance was
-      // replaced; see bug 1691 https://github.com/i18next/react-i18next/issues/1691
       setT(getT);
     }
   }, [i18n, keyPrefix, ready]); // re-run when i18n instance or keyPrefix were replaced
@@ -179,20 +174,22 @@ export const useTranslation = (ns, props = {}) => {
   throw new Promise((resolve) => {
     if (props.lng) {
       loadLanguages(i18n, props.lng, namespaces, (err) => {
-        if (err) {
+        const failedNamespaces = namespaces.filter((n) => !hasLoadedNamespace(n, i18n));
+        if (err || failedNamespaces.length > 0) {
           setError({
             hasError: true,
-            failedNamespaces: namespaces.filter((n) => !hasLoadedNamespace(n, i18n)),
+            failedNamespaces,
           });
         }
         resolve();
       });
     } else {
       loadNamespaces(i18n, namespaces, (err) => {
-        if (err) {
+        const failedNamespaces = namespaces.filter((n) => !hasLoadedNamespace(n, i18n));
+        if (err || failedNamespaces.length > 0) {
           setError({
             hasError: true,
-            failedNamespaces: namespaces.filter((n) => !hasLoadedNamespace(n, i18n)),
+            failedNamespaces,
           });
         }
         resolve();
@@ -200,3 +197,4 @@ export const useTranslation = (ns, props = {}) => {
     }
   });
 };
+
