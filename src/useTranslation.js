@@ -42,10 +42,11 @@ export const useTranslation = (ns, props = {}) => {
         return optsOrDefaultValue.defaultValue;
       return Array.isArray(k) ? k[k.length - 1] : k;
     };
-    const retNotReady = [notReadyT, {}, false];
+    const retNotReady = [notReadyT, {}, false, { hasError: false, failedNamespaces: [] }];
     retNotReady.t = notReadyT;
     retNotReady.i18n = {};
     retNotReady.ready = false;
+    retNotReady.error = { hasError: false, failedNamespaces: [] };
     return retNotReady;
   }
 
@@ -87,6 +88,7 @@ export const useTranslation = (ns, props = {}) => {
     );
 
   const [t, setT] = useState(getT);
+  const [error, setError] = useState({ hasError: false, failedNamespaces: [] });
 
   let joinedNS = namespaces.join();
   if (props.lng) joinedNS = `${props.lng}${joinedNS}`;
@@ -101,17 +103,34 @@ export const useTranslation = (ns, props = {}) => {
     // in side effect and do not call resetT if unmounted
     if (!ready && !useSuspense) {
       if (props.lng) {
-        loadLanguages(i18n, props.lng, namespaces, () => {
-          if (isMounted.current) setT(getNewT);
+        loadLanguages(i18n, props.lng, namespaces, (err) => {
+          if (isMounted.current) {
+            if (err) {
+              setError({
+                hasError: true,
+                failedNamespaces: namespaces.filter((n) => !hasLoadedNamespace(n, i18n)),
+              });
+            }
+            setT(getNewT);
+          }
         });
       } else {
-        loadNamespaces(i18n, namespaces, () => {
-          if (isMounted.current) setT(getNewT);
+        loadNamespaces(i18n, namespaces, (err) => {
+          if (isMounted.current) {
+            if (err) {
+              setError({
+                hasError: true,
+                failedNamespaces: namespaces.filter((n) => !hasLoadedNamespace(n, i18n)),
+              });
+            }
+            setT(getNewT);
+          }
         });
       }
     }
 
     if (ready && previousJoinedNS && previousJoinedNS !== joinedNS && isMounted.current) {
+      setError({ hasError: false, failedNamespaces: [] });
       setT(getNewT);
     }
 
@@ -136,6 +155,7 @@ export const useTranslation = (ns, props = {}) => {
   // instance was replaced (for example in the provider).
   useEffect(() => {
     if (isMounted.current && ready) {
+      setError({ hasError: false, failedNamespaces: [] });
       // not getNewT: depend on dependency list of the useCallback call within
       // useMemoizedT to only provide a newly-bound t *iff* i18n instance was
       // replaced; see bug 1691 https://github.com/i18next/react-i18next/issues/1691
@@ -143,10 +163,11 @@ export const useTranslation = (ns, props = {}) => {
     }
   }, [i18n, keyPrefix, ready]); // re-run when i18n instance or keyPrefix were replaced
 
-  const ret = [t, i18n, ready];
+  const ret = [t, i18n, ready, error];
   ret.t = t;
   ret.i18n = i18n;
   ret.ready = ready;
+  ret.error = error;
 
   // return hook stuff if ready
   if (ready) return ret;
@@ -157,9 +178,25 @@ export const useTranslation = (ns, props = {}) => {
   // not yet loaded namespaces -> load them -> and trigger suspense
   throw new Promise((resolve) => {
     if (props.lng) {
-      loadLanguages(i18n, props.lng, namespaces, () => resolve());
+      loadLanguages(i18n, props.lng, namespaces, (err) => {
+        if (err) {
+          setError({
+            hasError: true,
+            failedNamespaces: namespaces.filter((n) => !hasLoadedNamespace(n, i18n)),
+          });
+        }
+        resolve();
+      });
     } else {
-      loadNamespaces(i18n, namespaces, () => resolve());
+      loadNamespaces(i18n, namespaces, (err) => {
+        if (err) {
+          setError({
+            hasError: true,
+            failedNamespaces: namespaces.filter((n) => !hasLoadedNamespace(n, i18n)),
+          });
+        }
+        resolve();
+      });
     }
   });
 };
