@@ -66,10 +66,10 @@ export const useTranslation = (ns, props = {}) => {
   // report namespaces as used
   i18n.reportNamespaces.addUsedNamespaces?.(namespaces);
 
-  // are we ready? yes if all namespaces in first language are loaded already (either with data or empty object on failed load)
+  // Determine if namespaces are ready by checking both initialization and namespace availability
   const ready =
     (i18n.isInitialized || i18n.initializedStoreOnce) &&
-    namespaces.every((n) => hasLoadedNamespace(n, i18n, i18nOptions));
+    namespaces.every((n) => i18n.hasResourceBundle(i18n.language, n));
 
   // binding t function to namespace (acts also as rerender trigger *when* args have changed)
   const memoGetT = useMemoizedT(
@@ -110,7 +110,9 @@ export const useTranslation = (ns, props = {}) => {
 
     const loadCallback = (err) => {
       if (isMounted.current) {
-        const failedNamespaces = namespaces.filter((n) => !hasLoadedNamespace(n, i18n));
+        const failedNamespaces = namespaces.filter(
+          (n) => !i18n.hasResourceBundle(i18n.language, n),
+        );
         if (err || failedNamespaces.length > 0) {
           updateErrorState(failedNamespaces);
         } else {
@@ -173,7 +175,9 @@ export const useTranslation = (ns, props = {}) => {
   // not yet loaded namespaces -> load them -> and trigger suspense
   throw new Promise((resolve) => {
     const loadCallback = (err) => {
-      const failedNamespaces = namespaces.filter((n) => !hasLoadedNamespace(n, i18n));
+      const failedNamespaces = namespaces.filter(
+        (n) => !i18n.hasResourceBundle(i18n.language, n),
+      );
       if (err || failedNamespaces.length > 0) {
         setError({
           hasError: true,
@@ -190,3 +194,4 @@ export const useTranslation = (ns, props = {}) => {
     }
   });
 };
+
