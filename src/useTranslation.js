@@ -78,6 +78,7 @@ export const useTranslation = (ns, props = {}) => {
     i18nOptions.nsMode === 'fallback' ? namespaces : namespaces[0],
     keyPrefix,
   );
+
   const getT = () => memoGetT;
   const getNewT = () =>
     alwaysNewT(
@@ -95,14 +96,15 @@ export const useTranslation = (ns, props = {}) => {
   const previousJoinedNS = usePrevious(joinedNS);
 
   const isMounted = useRef(true);
+
   useEffect(() => {
     const { bindI18n, bindI18nStore } = i18nOptions;
     isMounted.current = true;
 
-    const updateErrorState = (failedNs) => {
+    const updateErrorState = (failedNamespaces) => {
       setError({
-        hasError: failedNs.length > 0,
-        failedNamespaces: failedNs,
+        hasError: failedNamespaces.length > 0,
+        failedNamespaces,
       });
     };
 
@@ -118,7 +120,7 @@ export const useTranslation = (ns, props = {}) => {
       }
     };
 
-    // if not ready and not using suspense load the namespaces
+    // Load namespaces if not ready
     if (!ready && !useSuspense) {
       if (props.lng) {
         loadLanguages(i18n, props.lng, namespaces, loadCallback);
@@ -149,8 +151,6 @@ export const useTranslation = (ns, props = {}) => {
     };
   }, [i18n, joinedNS]); // re-run effect whenever list of namespaces changes
 
-  // t is correctly initialized by useState hook. We only need to update it after i18n
-  // instance was replaced (for example in the provider).
   useEffect(() => {
     if (isMounted.current && ready) {
       setError({ hasError: false, failedNamespaces: [] });
@@ -158,7 +158,7 @@ export const useTranslation = (ns, props = {}) => {
     }
   }, [i18n, keyPrefix, ready]); // re-run when i18n instance or keyPrefix were replaced
 
-  const ret = [t, i18n, ready, error];
+  const ret = [t, i18n, ready, error]; // Include error in tuple response
   ret.t = t;
   ret.i18n = i18n;
   ret.ready = ready;
@@ -172,29 +172,21 @@ export const useTranslation = (ns, props = {}) => {
 
   // not yet loaded namespaces -> load them -> and trigger suspense
   throw new Promise((resolve) => {
+    const loadCallback = (err) => {
+      const failedNamespaces = namespaces.filter((n) => !hasLoadedNamespace(n, i18n));
+      if (err || failedNamespaces.length > 0) {
+        setError({
+          hasError: true,
+          failedNamespaces,
+        });
+      }
+      resolve();
+    };
+
     if (props.lng) {
-      loadLanguages(i18n, props.lng, namespaces, (err) => {
-        const failedNamespaces = namespaces.filter((n) => !hasLoadedNamespace(n, i18n));
-        if (err || failedNamespaces.length > 0) {
-          setError({
-            hasError: true,
-            failedNamespaces,
-          });
-        }
-        resolve();
-      });
+      loadLanguages(i18n, props.lng, namespaces, loadCallback);
     } else {
-      loadNamespaces(i18n, namespaces, (err) => {
-        const failedNamespaces = namespaces.filter((n) => !hasLoadedNamespace(n, i18n));
-        if (err || failedNamespaces.length > 0) {
-          setError({
-            hasError: true,
-            failedNamespaces,
-          });
-        }
-        resolve();
-      });
+      loadNamespaces(i18n, namespaces, loadCallback);
     }
   });
 };
-
